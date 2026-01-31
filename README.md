@@ -48,7 +48,7 @@ Follow [SETUP_GUIDE.md](SETUP_GUIDE.md) for step-by-step Azure resource creation
 ### 2. Local Setup
 
 ```bash
-cd project1-azure-rag
+cd azure-ai-rag-system
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
