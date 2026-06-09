@@ -5,29 +5,56 @@ A production-grade Retrieval Augmented Generation system built on Azure cloud se
 ## Architecture
 
 ```
-User Question
-     │
-     ▼
-┌─────────────────────┐
-│  Azure OpenAI       │ ← Embedding: text-embedding-3-small
-│  (Embed Query)      │    Converts question to 1536-dim vector
-└─────────────────────┘
-     │
-     ▼
-┌─────────────────────┐
-│  Azure AI Search    │ ← Hybrid search: keyword + vector
-│  (Find Relevant     │    Returns top-5 most relevant chunks
-│   Document Chunks)  │
-└─────────────────────┘
-     │
-     ▼
-┌─────────────────────┐
-│  Azure OpenAI       │ ← Generation: GPT-4o-mini
-│  (Generate Answer)  │    Answers using ONLY the retrieved context
-└─────────────────────┘
-     │
-     ▼
-  Answer + Sources
+## Deep Dive Architecture: Ingestion to Generation
+
+A robust RAG system operates in two distinct phases: **Data Ingestion** (preparing the knowledge base) and **Runtime Generation** (handling user queries). 
+
+```text
+========================================================================
+PHASE 1: DATA INGESTION (Offline Processing)
+========================================================================
+[Raw Documents] (PDFs, TXT, Word)
+      │
+      ▼
+[Azure Blob Storage]     <- Safe, scalable persistent storage
+      │
+      ▼
+[Document Processor]     <- Extracts raw text, normalizes formatting
+      │
+      ▼
+[Semantic Splitter]      <- Chunks text (e.g., 1000 tokens, 200 overlap)
+      │                     Preserves context boundaries
+      ▼
+[Azure OpenAI]           <- text-embedding-3-small
+      │                     Converts each text chunk into a 1536-dim vector
+      ▼
+[Azure AI Search]        <- Stores Vectors + BM25 Keyword Index
+========================================================================
+
+========================================================================
+PHASE 2: RETRIEVAL & GENERATION (Runtime Execution)
+========================================================================
+[User Query]             <- e.g., "What is the company policy on remote work?"
+      │
+      ▼
+[Azure OpenAI]           <- Embeds the user query into a 1536-dim vector
+      │                     using the exact same embedding model
+      ▼
+[Azure AI Search]        <- Executes Hybrid Search
+      │                     Cross-references query vector & keyword matches
+      ▼
+[Retrieved Context]      <- Returns the Top-5 most relevant document chunks
+      │                     along with metadata (filenames, page numbers)
+      ▼
+[Prompt Assembler]       <- Constructs the strict prompt:
+      │                     (System Instructions + Retrieved Context + Query)
+      ▼
+[Azure OpenAI]           <- GPT-4o-mini evaluates the prompt
+      │                     Generates answer strictly using provided context
+      ▼
+[Final Output]           <- Streams answer to UI (Streamlit)
+                            Appends accurate source citations
+========================================================================
 ```
 
 ## Azure Services Used
