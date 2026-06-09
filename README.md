@@ -1,6 +1,13 @@
-# Azure AI RAG System
+## The Problem
+Large Language Models hallucinate. They do not know your company's proprietary data, internal policies, or private roadmaps. If you connect a raw LLM to an enterprise application, it will confidently invent facts when it lacks context. You cannot put that in front of users.
 
-A production-grade Retrieval Augmented Generation system built on Azure cloud services. Upload documents, ask questions, get accurate answers grounded in your data.
+## The Solution
+This architecture decouples knowledge from reasoning. It uses Azure AI Search to find the exact, factual text chunks relevant to the user's question using a hybrid search algorithm. It then injects only those specific chunks into the Azure OpenAI prompt. The LLM is strictly instructed to act as a reasoning engine over that provided text, completely ignoring its pre-trained biases. 
+
+## Business Impact
+* **Zero Hallucinations:** The model cannot invent answers. If the answer is not in the ingested documents, the system explicitly says so.
+* **Full Auditability:** Every generated response includes a direct citation to the source file. Users can verify the truth immediately.
+* **Data Privacy:** The entire pipeline lives within your Azure tenant. Proprietary documents are never used to train public foundational models.
 
 ## Architecture
 
