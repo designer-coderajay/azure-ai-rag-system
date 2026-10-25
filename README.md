@@ -31,102 +31,55 @@ Because documents stay in your own Azure resources, your data is not sent to a t
 
 ## The whole system in one picture
 
-```mermaid
-flowchart LR
-    subgraph IN["1 · INGEST (once per document)"]
-        direction TB
-        D["Your files<br/>PDF · DOCX · TXT"] --> P["Load text<br/>document_processor.py"]
-        P --> C["Chunk<br/>500 chars, 50 overlap"]
-        C --> E["Embed each chunk<br/>text-embedding-3-small<br/>1536 numbers"]
-        E --> I[("Azure AI Search<br/>keyword index + vector index")]
-        D -. "optional copy" .-> B[("Azure Blob Storage")]
-    end
+<p align="center">
+  <img src="docs/anatomy/rag-bench.gif" alt="An animated isometric bench. Documents are cut into 500-character chunks and stamped with a 1536-number vector, then filed in an eight-drawer cabinet. A question gets the same stamp, a reader bar scores every drawer, the five best drawers open one at a time and fill a prompt tray, a press squeezes the prompt into the chat model, and an answer card slides out with its source tabs." width="900">
+</p>
 
-    subgraph ASK["2 · ASK (every question)"]
-        direction TB
-        Q["Question"] --> QE["Embed the question<br/>same model"]
-        QE --> H["Hybrid search<br/>keywords + vectors<br/>top 5 chunks"]
-        H --> PR["Build prompt<br/>rules + chunks + question"]
-        PR --> G["Chat model<br/>gpt-4o-mini"]
-        G --> A["Answer + sources"]
-    end
+The pipeline drawn as a machine on a bench, left to right. Every part is one step of the code:
 
-    I ==> H
+| On the bench | In the pipeline | Code |
+|---|---|---|
+| Stack of documents | Your PDF, DOCX and TXT files | `document_processor.load_document()` |
+| Guillotine with a ruler plate marked 500 and 50 | Chunks of 500 characters, 50 shared with the next chunk | `document_processor.chunk_text()` |
+| Belt, stamp and dial marked `1536` | Each chunk becomes a vector of 1536 numbers | `azure_openai.get_embeddings_batch()` |
+| Eight-drawer cabinet | The Azure AI Search index: one drawer per stored chunk | `search_index.index_documents()` |
+| Question card down the chute | The user's question, embedded by the same stamp | `azure_openai.get_embedding()` |
+| Reader bar sweeping the drawers, two bars per drawer | Hybrid search: a keyword score (upper bar) and a vector score (lower bar) for every chunk | `search_index.search()` |
+| Five drawers opening one at a time | The top 5 chunks (`top_k=5`) | `RAGPipeline.query()` |
+| Prompt tray with a press marked `LLM` | Rules + the 5 chunks + the question go to the chat model | `azure_openai.chat_completion()` |
+| Answer card with five source tabs | The answer, plus the source file and page of each chunk used | `RAGResult.sources` |
 
-    classDef store fill:#e8f1ff,stroke:#2b5fd9,color:#111;
-    classDef step fill:#f6f6f6,stroke:#888,color:#111;
-    classDef out fill:#e9f8ec,stroke:#2e8b57,color:#111;
-    class I,B store;
-    class D,P,C,E,Q,QE,H,PR,G step;
-    class A out;
-```
+**Try it yourself.** Open [`docs/anatomy/rag-bench-light.html`](docs/anatomy/rag-bench-light.html) in a browser (a dark version, `rag-bench.html`, sits beside it). Hover to scrub through ingest and a question, click or press `1`, `2`, `3` to ask the next of three sample questions, use the arrow keys to step. GitHub does not run HTML in a README, so the animation above is a recording of it; rebuild or edit the figure with the steps in [`docs/anatomy/README.md`](docs/anatomy/README.md).
+
+> The chunk names and the keyword and vector scores on the bench are sample data made up for the drawing. The chunk size, overlap, vector size, hybrid search and `top_k = 5` are the project's real settings.
 
 ## How it works, start to finish
 
 ### Phase 1 · Ingest: turn documents into something searchable
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant U as You (demo.py or app.py)
-    participant PL as RAGPipeline
-    participant BL as Blob Storage
-    participant DP as document_processor
-    participant AO as Azure OpenAI
-    participant AS as Azure AI Search
-    U->>PL: ingest(folder, upload_to_blob=True)
-    opt upload_to_blob is True
-        PL->>BL: Upload the original files
-    end
-    PL->>DP: Load and chunk every file
-    DP-->>PL: Chunks with source, page, chunk_index
-    PL->>AO: Embed the chunk texts (batched)
-    AO-->>PL: One 1536-number vector per chunk
-    PL->>AS: Upload chunks plus their vectors
-    AS-->>U: Count of chunks indexed
-```
+Run once per document set (`pipeline.ingest(...)`).
 
-| Step | What happens | Code |
-|---|---|---|
-| **1. Create the index** (once) | Defines the fields (`id`, `content`, `source`, `page`, `chunk_index`) and a 1536-dimension vector field searched with HNSW. | `search_index.create_index()` via `pipeline.setup()` |
-| **2. Back up originals** (optional) | Copies the files to a Blob container. Search does not read from Blob; this is storage only. | `blob_storage.upload_directory()` |
-| **3. Load text** | Reads `.txt`, `.pdf` (page by page) and `.docx`. | `document_processor.load_document()` |
-| **4. Chunk** | Splits on blank lines, then sentences for long paragraphs, then merges pieces up to **500 characters** with a **50-character** overlap, so a fact is less likely to be cut in half. | `document_processor.chunk_text()` |
-| **5. Embed** | Each chunk becomes a vector with `text-embedding-3-small`. Chunks with similar meaning get similar vectors. | `azure_openai.get_embeddings_batch()` |
-| **6. Index** | Text and vector are stored together, so one query can use both. | `search_index.index_documents()` |
+| Step | What happens | Bench part | Code |
+|---|---|---|---|
+| **1. Create the index** (once) | Defines the fields (`id`, `content`, `source`, `page`, `chunk_index`) and a 1536-dimension vector field searched with HNSW. | The empty cabinet | `search_index.create_index()` via `pipeline.setup()` |
+| **2. Back up originals** (optional) | Copies the files to a Blob container. Search does not read from Blob; this is storage only. | not drawn | `blob_storage.upload_directory()` |
+| **3. Load text** | Reads `.txt`, `.pdf` (page by page) and `.docx`. | Document stack | `document_processor.load_document()` |
+| **4. Chunk** | Splits on blank lines, then sentences for long paragraphs, then merges pieces up to **500 characters** with a **50-character** overlap, so a fact is less likely to be cut in half. | Guillotine | `document_processor.chunk_text()` |
+| **5. Embed** | Each chunk becomes a vector with `text-embedding-3-small`. Chunks with similar meaning get similar vectors. | Stamp and dial | `azure_openai.get_embeddings_batch()` |
+| **6. Index** | Text and vector are stored together, so one query can use both. | A drawer per chunk | `search_index.index_documents()` |
 
 ### Phase 2 · Ask: find the evidence, then answer
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant U as You
-    participant PL as RAGPipeline.query
-    participant AO as Azure OpenAI
-    participant AS as Azure AI Search
-    U->>PL: "What is the remote work policy?"
-    PL->>AO: Embed the question
-    AO-->>PL: Question vector
-    PL->>AS: Keyword query + vector query together, top 5
-    AS-->>PL: 5 chunks with source and page
-    alt nothing found
-        PL-->>U: "I couldn't find any relevant information..."
-    else chunks found
-        PL->>PL: Build context: [Source: file, Page n] + text, per chunk
-        PL->>AO: System rules + context + question (temperature 0.1)
-        AO-->>PL: Answer based on the context
-        PL-->>U: Answer + list of source chunks
-    end
-```
+Run for every question (`pipeline.query(...)`).
 
-| Step | What happens | Why it matters |
-|---|---|---|
-| **1. Embed the question** | Same embedding model as ingestion. | Question and chunks must live in the same "meaning space" to be comparable. |
-| **2. Hybrid search** | One request carries both a keyword query (`search_text`) and a vector query. Azure AI Search runs both and merges the rankings. | Keywords catch exact terms such as names and codes; vectors catch paraphrases. Together they miss less than either alone. |
-| **3. Take the top 5** | Default `top_k=5`, adjustable per call and in the web UI. | More chunks give more context but more noise and cost. |
-| **4. Assemble the prompt** | Each chunk is labelled `[Source: file, Page n]` and joined with `---` separators. | The model can cite what it read. |
-| **5. Generate** | `gpt-4o-mini`, temperature 0.1, max 1024 tokens. The rules say: use only the context; if the answer is not there, say "I don't have enough information to answer this."; be concise; cite the document. | Keeps answers grounded and repeatable. |
-| **6. Return** | `RAGResult` holds the question, the answer and the source chunks. | Every answer can be checked against its evidence. |
+| Step | What happens | Bench part | Why it matters |
+|---|---|---|---|
+| **1. Embed the question** | Same embedding model as ingestion. | Question card under the stamp | Question and chunks must live in the same "meaning space" to be comparable. |
+| **2. Hybrid search** | One request carries both a keyword query (`search_text`) and a vector query. Azure AI Search runs both and merges the rankings. | Reader bar, two bars per drawer | Keywords catch exact terms such as names and codes; vectors catch paraphrases. Together they miss less than either alone. |
+| **3. Take the top 5** | Default `top_k=5`, adjustable per call and in the web UI. | Five drawers open | More chunks give more context but more noise and cost. |
+| **4. Assemble the prompt** | Each chunk is labelled `[Source: file, Page n]` and joined with `---` separators. | Prompt tray | The model can cite what it read. |
+| **5. Generate** | `gpt-4o-mini`, temperature 0.1, max 1024 tokens. The rules say: use only the context; if the answer is not there, say "I don't have enough information to answer this."; be concise; cite the document. If search returns nothing, the pipeline answers "I couldn't find any relevant information in the indexed documents." without calling the model. | Press marked `LLM` | Keeps answers grounded and repeatable. |
+| **6. Return** | `RAGResult` holds the question, the answer and the source chunks. | Answer card with source tabs | Every answer can be checked against its evidence. |
 
 ## Azure services used
 
@@ -196,6 +149,8 @@ azure-ai-rag-system/
 ├── requirements.txt          # Python dependencies
 ├── .env.example              # Template for Azure credentials
 ├── SETUP_GUIDE.md            # Step-by-step Azure Portal instructions
+├── docs/
+│   └── anatomy/              # The interactive bench figure (HTML, GIF, PNG) and its build files
 └── src/
     ├── config.py             # Loads settings from .env
     ├── document_processor.py # Load PDF/DOCX/TXT and split into chunks
