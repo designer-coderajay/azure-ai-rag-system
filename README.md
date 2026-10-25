@@ -29,6 +29,23 @@ This project keeps **knowledge** and **reasoning** apart:
 
 Because documents stay in your own Azure resources, your data is not sent to a third-party service beyond Azure. Check your tenant's Azure OpenAI data-handling and retention settings against your own policy; this repo does not configure them.
 
+## The three ideas, illustrated
+
+<p align="center">
+  <img src="docs/illustrations/01-ingest.png" alt="A black creature at a press cuts a long document into small chunks, stamps each with a number tag, and files them in a cabinet." width="820"><br>
+  <sub><b>1 · Ingest.</b> A long document is cut into chunks, each chunk gets a number tag (its vector), and all are filed in the search index.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/illustrations/02-retrieve.png" alt="A black creature on a stool shines two flashlights, one for exact words and one for similar meaning, over a huge pile of pages, and catches only the top 5 on a tray." width="820"><br>
+  <sub><b>2 · Retrieve.</b> The question searches the pile two ways at once, by exact words and by similar meaning, and only the top 5 chunks come back.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/illustrations/03-answer.png" alt="One creature stitches an answer from source pages with one thread per sentence; another holds up a page saying no source, no answer." width="820"><br>
+  <sub><b>3 · Answer.</b> The answer is built only from the retrieved sources. If the sources do not contain it, the system says so instead of guessing.</sub>
+</p>
+
 ## The whole system in one picture
 
 <p align="center">
@@ -150,6 +167,7 @@ azure-ai-rag-system/
 ├── .env.example              # Template for Azure credentials
 ├── SETUP_GUIDE.md            # Step-by-step Azure Portal instructions
 ├── docs/
+│   ├── illustrations/        # Three hand-drawn walkthrough images used above
 │   └── anatomy/              # The interactive bench figure (HTML, GIF, PNG) and its build files
 └── src/
     ├── config.py             # Loads settings from .env
